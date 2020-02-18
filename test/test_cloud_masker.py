@@ -61,7 +61,7 @@ def stress_test(num_sizes=None, num_clouds=None, num_iters=None,
         num_iters = 200 if num_iters is None else num_iters
         total = num_sizes * num_clouds * num_iters
 
-        box_size = np.geomspace(1, 10 ** 3, num=num_sizes, dtype=int)
+        box_size = np.geomspace(1, 10 ** 2, num=num_sizes, dtype=int)
         box_entropy = np.geomspace(1, 100, num=num_clouds, dtype=int)
         results = np.zeros((num_sizes, num_clouds, num_iters),
                            dtype=np.float64)
@@ -160,14 +160,14 @@ def standard_test(fpath):
     cloud_masker = CloudMasker(mask)
 
     # Save the original cloud mask
-    cloud_masker.output_mask(fpath + "_original.png")
+    cloud_masker.output_mask(fpath + "_original.tiff")
 
     # Pad the cloud by 1 pixel.
     mask_padded = cloud_masker.pad_mask(masked_value=1, padding=1,
                                         merge_masks=False)
 
     # Save the whole mask
-    cloud_masker.output_mask(fpath + "_padded.png", extra_bands=['mask_padded'])
+    cloud_masker.output_mask(fpath + "_padded.tiff", extra_bands=[mask_padded])
 
 
 if __name__ == '__main__':
@@ -176,14 +176,15 @@ if __name__ == '__main__':
 
     # Perform the standard test on the cloud masker program.
     fpath_plot = "Interview\\images\\standard_test"
-    standard_test(fpath_plot)
+    # standard_test(fpath_plot)
 
     # Perform the mandlebrot test on the cloud masker program.
     fpath_plot = "Interview\\images\\mandlebrot\\"
-    mandlebrot_test(fpath_plot)
+    # mandlebrot_test(fpath_plot)
 
     # Perform the stress test on the cloud masker program.
-    fpath_data = "Interview\\data\\stress_test"
+    fpath_data = "Interview\\data\\stress_test_backup.npz"
     fpath_plot = "Interview\\images\\stress_test.png"
-    stress_test(num_sizes=500, num_clouds=500, num_iters=5, save_data=fpath_data,
+    stress_test(num_sizes=500, num_clouds=500, num_iters=200,
+                load_data=fpath_data,
                 save_plot=fpath_plot)

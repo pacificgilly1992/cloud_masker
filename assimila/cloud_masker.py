@@ -187,9 +187,13 @@ class CloudMasker(object):
         # Create the TIFF file
         ds = self.gdal_driver.Create(self.ensure_dir(fpath, isdir=False),
                                      *self._mask.shape[::-1],
-                                     gdal.GDT_Byte,
                                      len(bands),
+                                     gdal.GDT_Byte,
                                      options=(f'COMPRESS={compress}',))
+
+        if ds.RasterCount != len(bands):
+            raise IOError("Could not create the required number of bands to "
+                          "make your GeoTIFF.")
 
         if ds is None:
             raise IOError("Could not create GeoTIFF. Please check the logs.")
@@ -200,3 +204,4 @@ class CloudMasker(object):
 
         # Output the raster to file
         ds.FlushCache()
+        ds = None
