@@ -1,11 +1,13 @@
 import logging
-import unittest
-import gilly_utilities as gu
-import numpy as np
+import subprocess
 import time
+import unittest
 
+import gilly_utilities as gu
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.colors import LogNorm
+
 from ..assimila import CloudMasker
 
 logger = logging.getLogger(__name__)
@@ -51,6 +53,21 @@ def compute_mandelbrot(n_max, some_threshold, nx, ny):
     return mandelbrot_set
 
 
+def run_command(cmd):
+    """
+    Runs a command on the command line. Similar to 
+    treadmill.easy.run_command,
+    but this method has not restrictions on what can be execute. Use 
+    with caution!
+
+    :param cmd: command to run as an ordered list
+    :return: list of output lines
+    """
+    logger.debug("Running [{cmd}]".format(cmd=cmd))
+    return [line.decode(encoding="utf-8") for line in
+            subprocess.check_output(cmd, shell=True).splitlines()]
+
+
 def stress_test(num_sizes=None, num_clouds=None, num_iters=None,
                 save_data=None, load_data=False, save_plot=None):
     if load_data is False:
@@ -61,11 +78,14 @@ def stress_test(num_sizes=None, num_clouds=None, num_iters=None,
         num_iters = 200 if num_iters is None else num_iters
         total = num_sizes * num_clouds * num_iters
 
-        box_size = np.geomspace(1, 10 ** 2, num=num_sizes, dtype=int)
-        box_entropy = np.geomspace(1, 100, num=num_clouds, dtype=int)
+        box_size = np.geomspace(0.5 * 10 ** 4, 1, num=num_sizes, dtype=int)
+        box_entropy = np.geomspace(10 ** -5, 100, num=num_clouds,
+                                   dtype=np.float64)
         results = np.zeros((num_sizes, num_clouds, num_iters),
                            dtype=np.float64)
-        with gu.progress("Entropy: %s", total) as progress:
+        with gu.progress("Box Size: %s, Box Entropy: %s,"
+                         "Iteration: %s. Time: %s",
+                         total) as progress:
             for i, size in enumerate(box_size):
                 for j, mask_num in enumerate(box_entropy):
                     for k in range(num_iters):
@@ -85,13 +105,14 @@ def stress_test(num_sizes=None, num_clouds=None, num_iters=None,
 
                         # Pass the mask by 1 value.
                         t1 = time.time()
-                        mask_padded = cloud_masker.pad_mask(masked_value=1,
+                        mask_padded = cloud_masker.pad_mask(masked_value=0,
                                                             padding=1,
                                                             merge_masks=False)
-                        results[i, j, k] = time.time() - t1
+                        t2 = time.time()
+                        results[i, j, k] = t2 - t1
 
                         # Update the progress bar.
-                        progress.update(entropy)
+                        progress.update(size, mask_num, k, t2 - t1)
 
         # Save for saves keepings
         np.savez_compressed(save_data,
@@ -107,22 +128,38 @@ def stress_test(num_sizes=None, num_clouds=None, num_iters=None,
         results = data['box_results']
 
     # Calculate the mean of all the iterations for each box size and entropy.
-    results = np.nanmean(results, axis=2)
+    results = np.nanmedian(results, axis=2)
 
     # Work out the min and max values for plotting
-    vmin = max(10**-6, np.nanmin(results))
-    vmax = np.nanmax(results)
+    vmin = max(10 ** -5, np.nanmin(results))
+    vmax = gu.truncate(np.nanmax(results), floor=False)
 
+    print(results)
+    print(f"Results size: {results.shape}")
     print(f"Min: {vmin}. Max: {vmax}")
 
     # Plot the data as a color mesh
-    plt.pcolormesh(box_size, box_entropy, results, norm=LogNorm(vmin=vmin, vmax=vmax))
+    plt.pcolormesh(box_size**2, box_entropy, np.array(results).T,
+                   norm=LogNorm(vmin=vmin, vmax=vmax),
+                   cmap=plt.get_cmap('tab20b'))
     plt.xscale('log')
     plt.yscale('log')
     plt.xlabel("Size of the grid box (dimensionless)")
     plt.ylabel("Cloud percentage (%)")
+    plt.ylim(10**-5, 100)
 
-    plt.colorbar()
+    # Fix the aspect ratio
+    ax = plt.gca()
+    f = plt.gcf()
+    gu.fixed_aspect_ratio(ax=ax, ratio=1, adjustable=None, xscale='log',
+                          yscale='log')
+
+    cbar = plt.colorbar()
+    cbar.set_label('Time taken (s)')
+
+    # Set size of the figure
+    f.set_size_inches(5, 4)
+
     plt.tight_layout()
 
     if save_plot is None:
@@ -147,6 +184,15 @@ def mandlebrot_test(fapth):
                 fpath=fapth, pad=str(pad).rjust(3, "0")))
             progress.update()
 
+    # Make video of the mandlebrot
+    ffmpeg_cmd = 'ffmpeg -r 25 -start_number 000 -i mandlebrot_%03d.tiff '\
+                 '-vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" -preset slow ' \
+                 '-profile:v high -level:v 4.0 -pix_fmt yuv420p -crf 22 ' \
+                 '-codec:a aac -b:v 50000k -minrate 50000k -maxrate 50000k ' \
+                 '-an mandlebrot_timelapse.mov'
+    logger.info(f"Creating mandlebrot video using FFMPEG cmd: {ffmpeg_cmd}")
+    run_command(ffmpeg_cmd)
+
 
 def standard_test(fpath):
     """Creates the simple grid and outputs it."""
@@ -154,7 +200,7 @@ def standard_test(fpath):
     # Lets do a simples
     mask = np.array(
         [[0, 0, 0, 0, 0], [0, 0, 1, 1, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0],
-         [0, 1, 0, 0, 0], [0, 0, 0, 0, 0]], dtype=np.uint8)
+         [0, 1, 0, 0, 0]], dtype=np.uint8)
 
     # Initialise the CloudMasker program
     cloud_masker = CloudMasker(mask)
@@ -167,7 +213,8 @@ def standard_test(fpath):
                                         merge_masks=False)
 
     # Save the whole mask
-    cloud_masker.output_mask(fpath + "_padded.tiff", extra_bands=[mask_padded])
+    cloud_masker._mask = mask_padded
+    cloud_masker.output_mask(fpath + "_padded.tiff")
 
 
 if __name__ == '__main__':
@@ -183,8 +230,8 @@ if __name__ == '__main__':
     # mandlebrot_test(fpath_plot)
 
     # Perform the stress test on the cloud masker program.
-    fpath_data = "Interview\\data\\stress_test_backup.npz"
-    fpath_plot = "Interview\\images\\stress_test.png"
-    stress_test(num_sizes=500, num_clouds=500, num_iters=200,
-                load_data=fpath_data,
+    fpath_data = "Interview\\data\\stress_test_backup_005.npz"
+    fpath_plot = "Interview\\images\\stress_test_005.png"
+    stress_test(num_sizes=50, num_clouds=50, num_iters=20,
+                save_data=fpath_data,
                 save_plot=fpath_plot)
